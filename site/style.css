@@ -196,3 +196,13 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 #c-out { margin-top: 16px; }
 #c-pass-row { margin: 8px 0 14px; }
 .foot a { color: var(--muted); }
+
+/* run page */
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.grid3 { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 0 16px; margin-top: 14px; }
+@media (max-width: 720px) { .grid3 { grid-template-columns: 1fr; } }
+#t { min-height: 260px; }
+.cmd.big pre { max-height: 360px; overflow: auto; padding-right: 150px; }
+.cmd.big code { white-space: pre; word-break: normal; font-size: .8rem; }
+.share-head { margin-top: 26px; margin-bottom: 4px; }
+#out { scroll-margin-top: 80px; }

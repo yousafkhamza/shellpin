@@ -1,16 +1,37 @@
 # shellpin
 
-Run-once shell scripts for your servers, hosted on GitHub Pages and taken down on an expiry date.
+Paste a shell script, get one command that runs it on any server. Nothing is uploaded or stored, and the command stops working after the time you pick (one year at most).
+
+**https://yousafkhamza.github.io/shellpin/**
+
+1. Paste the script (or drop a `.sh` file), set the arguments, tick sudo if needed, and choose how long the command should work.
+2. Copy the command and paste it into the server:
 
 ```bash
-curl -fsSL https://yousafkhamza.github.io/shellpin/s/userctl.sh | sudo bash -s -- create jatin
+s="$(base64 -d <<'SHELLPIN' | gunzip
+H4sIAAAAAAAAA41WbW/bNhD+7l9x1YIiwSZZTpdtNZAPWZqi...
+SHELLPIN
+)" && sudo bash -c "$s" userctl create jatin
 ```
 
-The script is piped straight into `bash`, so no copy is left on the server. Every script has an `@expires` date no more than **365 days** out. A daily workflow rebuilds the site without expired scripts and deletes them from the repository.
+How it works:
+- **No storage, no network.** The page gzips the script and base64-encodes it into the command. The page's Content-Security-Policy is `connect-src 'none'`, so the script never leaves the browser. The server needs no internet access and no TLS (no `curl` error 60), and no script file is left on disk.
+- **Safe to paste.** The whole script is decoded before anything runs. A cut-short or damaged paste fails `gunzip`'s checksum, and nothing runs.
+- **Interactive scripts work.** It runs through `bash -c`, so `read` prompts use the terminal, and the name you give becomes `$0`.
+- **Expiry.** A guard line at the top of the script refuses to run after the chosen time. It stops old commands being reused, but it isn't a lock: anyone can decode the command by hand.
+- **Share link.** "Copy share link" puts the script and settings into the part of the URL after `#`, so a colleague opens the same command. Nothing is stored here either.
+- **Size.** Scripts can be up to 120 KB. A 12 KB script makes a command of about 5 KB, which pastes fine into any SSH terminal. A single-line mode is there for tools that can't paste multiple lines.
 
-It replaces pastebin-style hosting (dpaste and similar) for scripts you run often. You get version control, review, ShellCheck, checksums, and an expiry you control.
+The command, and the script inside it, ends up in the server's shell history. Don't put secrets in scripts.
 
-## Features
+## Also in shellpin
+
+- **[Saved scripts](https://yousafkhamza.github.io/shellpin/scripts.html).** Keep the scripts you run often in `scripts/` for a short command, e.g. `curl -fsSL https://yousafkhamza.github.io/shellpin/s/userctl.sh | sudo bash -s -- create jatin`. See below.
+- **[Share a file](https://yousafkhamza.github.io/shellpin/f.html).** Hand over an SSH key or kubeconfig as a link. See below.
+
+## Saved scripts
+
+Saved scripts are served from GitHub Pages and piped straight into `bash`, so no copy is left on the server. Every script has an `@expires` date no more than **365 days** out. A daily workflow rebuilds the site without expired scripts and deletes them from the repository.
 
 - **One-liner builder.** Pick a script, type the arguments, and copy a ready command, with or without `sudo`.
 - **Verified mode.** The script is read into a shell variable, its SHA-256 is checked, and it runs with `bash -c`. Nothing touches the disk, and a changed or tampered script is refused:

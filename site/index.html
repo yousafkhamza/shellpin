@@ -3,173 +3,118 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://api.github.com; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <!-- connect-src 'none': your script never leaves this browser tab. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="referrer" content="no-referrer">
-  <meta name="robots" content="noindex">
-  <title>shellpin: run-once shell scripts for your servers</title>
-  <meta name="description" content="Pipe a shell script into bash on a server without leaving a copy behind. Hosted on GitHub Pages, removed on its expiry date.">
+  <title>shellpin: paste a script, get a command to run it</title>
+  <meta name="description" content="Paste a shell script and get one command that runs it on any server. Nothing is uploaded or stored. The command expires when you choose.">
   <meta name="color-scheme" content="dark light">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314181f'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='%23c6f36b' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M16 22h8' stroke='%23c6f36b' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.js"></script>
+  <script type="module" src="run.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="top">
     <a class="brand" href="./" aria-label="shellpin home"><span class="mark" aria-hidden="true">&gt;_</span>shellpin</a>
     <nav aria-label="Sections">
-      <a href="#scripts">Scripts</a>
-      <a href="#publish">Publish</a>
+      <a href="./" aria-current="page">Run a script</a>
+      <a href="scripts.html">Saved scripts</a>
       <a href="f.html">Share a file</a>
-      <a id="repo-link" href="#" hidden>Repository</a>
     </nav>
   </header>
 
   <main id="main">
     <section class="hero">
-      <h1>Run a script on a server, then it's gone.</h1>
-      <p>Scripts are served over HTTPS from GitHub Pages and piped straight into <code>bash</code>, so no copy is left on the server. Each one has an expiry date no more than a year out, and the site drops it on that day.</p>
+      <h1>Paste a script. Get one command. Run it anywhere.</h1>
+      <p>The script is packed inside the command, so nothing is uploaded, stored or downloaded. It works on servers with no internet access and leaves no file behind. The command stops working after the time you pick.</p>
     </section>
 
-    <section id="scripts" aria-labelledby="scripts-h">
-      <div class="section-head">
-        <h2 id="scripts-h">Scripts</h2>
-        <div class="toolbar">
-          <input id="q" type="search" placeholder="Filter by name or description" aria-label="Filter scripts" autocomplete="off">
-          <span id="count" class="muted" aria-live="polite"></span>
-        </div>
-      </div>
-
-      <div class="layout">
-        <ul id="list" class="list" aria-label="Published scripts"></ul>
-
-        <article id="detail" class="detail" aria-live="polite">
-          <p class="placeholder" id="placeholder">Pick a script to build its run command.</p>
-          <div id="detail-body" hidden>
-            <div class="detail-head">
-              <h3 id="d-name"></h3>
-              <span id="d-badge" class="badge"></span>
-            </div>
-            <p id="d-desc" class="desc"></p>
-            <dl class="facts">
-              <div><dt>Expires</dt><dd id="d-exp"></dd></div>
-              <div><dt>Size</dt><dd id="d-size"></dd></div>
-              <div><dt>SHA-256</dt><dd><code id="d-sha" class="hash"></code></dd></div>
-            </dl>
-
-            <label class="field">
-              <span>Arguments</span>
-              <input id="d-args" type="text" autocomplete="off" spellcheck="false">
-              <small id="d-usage" class="muted"></small>
-            </label>
-
-            <div class="opts" role="group" aria-label="Command options">
-              <label class="check"><input type="checkbox" id="o-verify" checked> Verify checksum in memory before running</label>
-              <label class="check"><input type="checkbox" id="o-sudo"> Run with sudo</label>
-            </div>
-
-            <div class="cmd">
-              <pre><code id="d-cmd"></code></pre>
-              <button type="button" id="copy" class="primary">Copy</button>
-            </div>
-            <p id="d-note" class="note"></p>
-
-            <div class="row">
-              <button type="button" id="d-src-btn">Show source</button>
-              <a id="d-raw" class="btn" href="#">Raw file</a>
-              <a id="d-edit" class="btn" href="#" rel="noopener" target="_blank">Edit or renew on GitHub</a>
-            </div>
-            <pre id="d-src" class="src" hidden tabindex="0" aria-label="Script source"></pre>
-          </div>
-        </article>
-      </div>
-    </section>
-
-    <section id="publish" aria-labelledby="publish-h">
-      <div class="section-head">
-        <h2 id="publish-h">Publish a script</h2>
-      </div>
-      <p class="lead">This page has no server: publishing commits <code>scripts/&lt;name&gt;.sh</code> to the repository and the Pages workflow deploys it in about a minute. <strong>Everything here is public, and git history keeps old versions.</strong> Never put passwords, keys or tokens in a script; pass them at run time.</p>
-
-      <form id="pub" class="pub" novalidate>
-        <div class="grid">
-          <label class="field">
-            <span>Name</span>
-            <div class="suffix"><input id="p-name" type="text" required autocomplete="off" spellcheck="false" placeholder="userctl" maxlength="63"><span>.sh</span></div>
-          </label>
-          <label class="field">
-            <span>Expires</span>
-            <select id="p-exp">
-              <option value="1">in 1 day</option>
-              <option value="7">in 7 days</option>
-              <option value="30" selected>in 30 days</option>
-              <option value="90">in 90 days</option>
-              <option value="180">in 180 days</option>
-              <option value="365">in 1 year (max)</option>
-              <option value="custom">on a date…</option>
-            </select>
-            <input id="p-date" type="date" hidden aria-label="Expiry date">
-            <small id="p-exp-on" class="muted"></small>
-          </label>
-        </div>
+    <section aria-labelledby="in-h">
+      <form id="run-form" class="pub" novalidate>
+        <h2 id="in-h" class="visually-hidden">Script</h2>
         <label class="field">
-          <span>Description</span>
-          <input id="p-desc" type="text" autocomplete="off" maxlength="200" placeholder="Create, reset or delete SSH users">
-        </label>
-        <label class="field">
-          <span>Usage <small class="muted">(shown as the arguments hint)</small></span>
-          <input id="p-usage" type="text" autocomplete="off" spellcheck="false" maxlength="200" placeholder="create|reset|delete &lt;user&gt; [pem|password|both] [yes|no] [yes|no]">
-        </label>
-        <label class="field">
-          <span>Script <small class="muted">(or drop a .sh file here)</small></span>
-          <textarea id="p-body" rows="14" spellcheck="false" autocomplete="off" placeholder="#!/bin/bash&#10;set -euo pipefail&#10;…"></textarea>
+          <span>Script <small class="muted">(paste it, or drop a .sh file on this box)</small></span>
+          <textarea id="t" rows="16" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="#!/bin/bash&#10;set -euo pipefail&#10;&#10;echo &quot;Hello from $(hostname)&quot;"></textarea>
         </label>
         <div class="row">
-          <label class="btn file">Load .sh file<input id="p-file" type="file" accept=".sh,.bash,text/x-sh,text/plain"></label>
-          <span id="p-size" class="muted"></span>
+          <label class="btn file">Load .sh file<input id="file" type="file" accept=".sh,.bash,text/x-sh,text/plain"></label>
+          <span id="size" class="muted"></span>
         </div>
 
-        <ul id="p-issues" class="issues" aria-live="polite"></ul>
-
-        <details class="token" id="token-box">
-          <summary>Commit directly with a GitHub token (optional)</summary>
-          <p>Without a token, “Continue on GitHub” opens GitHub's new-file page with the script filled in. With a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> limited to this repository with <em>Contents: read and write</em>, this page commits for you. The token stays in this tab's session storage and is only sent to <code>api.github.com</code>.</p>
-          <div class="row">
-            <input id="p-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…" aria-label="GitHub token">
-            <button type="button" id="p-forget">Forget token</button>
-          </div>
-        </details>
-
-        <div class="row actions">
-          <button type="submit" id="p-go" class="primary">Continue on GitHub</button>
-          <button type="button" id="p-dl">Download .sh</button>
+        <div class="grid3">
+          <label class="field">
+            <span>Name <small class="muted">($0 in the script)</small></span>
+            <input id="name" type="text" autocomplete="off" spellcheck="false" placeholder="userctl" maxlength="40">
+          </label>
+          <label class="field">
+            <span>Arguments</span>
+            <input id="args" type="text" autocomplete="off" spellcheck="false" placeholder="create jatin">
+          </label>
+          <label class="field">
+            <span>Command works for</span>
+            <select id="hours">
+              <option value="1">1 hour</option>
+              <option value="24">24 hours</option>
+              <option value="168" selected>7 days</option>
+              <option value="720">30 days</option>
+              <option value="2160">90 days</option>
+              <option value="8760">1 year (max)</option>
+            </select>
+          </label>
         </div>
-        <p id="p-status" class="status" role="status"></p>
+        <div class="opts">
+          <label class="check"><input type="checkbox" id="sudo"> Run with sudo</label>
+          <label class="check"><input type="checkbox" id="oneline"> Single line <small class="muted">(for tools that can't paste multiple lines)</small></label>
+        </div>
+        <ul id="issues" class="issues" aria-live="polite"></ul>
       </form>
     </section>
 
+    <section id="out" aria-labelledby="out-h" hidden>
+      <div class="section-head">
+        <h2 id="out-h">Run this on the server</h2>
+        <span id="until" class="badge"></span>
+      </div>
+      <div class="cmd big">
+        <pre><code id="cmd"></code></pre>
+        <button type="button" id="copy" class="primary">Copy command</button>
+      </div>
+      <p id="cmd-note" class="note"></p>
+
+      <div class="section-head share-head">
+        <h3>Share with your team</h3>
+      </div>
+      <p class="lead">This link opens this page with the same script and settings. The script is inside the link, so nothing is stored here either.</p>
+      <div class="row">
+        <button type="button" id="copy-link">Copy share link</button>
+        <span id="link-len" class="muted"></span>
+      </div>
+    </section>
+
     <section class="help" aria-labelledby="help-h">
-      <h2 id="help-h">Good to know</h2>
+      <h2 id="help-h">How it works</h2>
       <div class="cards">
         <div>
-          <h3>Quick or verified</h3>
-          <p>The quick command is a plain <code>curl -fsSL … | bash -s --</code>. The verified command reads the script into a shell variable, checks its SHA-256, then runs it with <code>bash -c</code>. Nothing is written to disk, and an edited script won't run until you copy a fresh command.</p>
+          <h3>Nothing is stored</h3>
+          <p>The page gzips the script and base64-encodes it into the command. This page's security policy blocks all network requests, so the script never leaves your browser.</p>
+        </div>
+        <div>
+          <h3>Safe to paste</h3>
+          <p>The server decodes the whole script before running anything. If the paste is cut short or damaged, <code>gunzip</code>'s checksum fails and nothing runs. Prompts (<code>read</code>) still work.</p>
         </div>
         <div>
           <h3>Expiry</h3>
-          <p>A daily workflow rebuilds the site at 00:07 UTC, leaves out scripts whose date has arrived, and deletes them from <code>scripts/</code>. To renew, edit the <code># @expires</code> line. A build fails if the date is more than a year after the build day.</p>
-        </div>
-        <div>
-          <h3>curl error 60</h3>
-          <p><code>unable to get local issuer certificate</code> means the server's CA bundle is broken or a proxy re-signs TLS. Fix the trust store; don't use <code>-k</code>. On Amazon Linux or RHEL: <code>sudo yum reinstall -y ca-certificates &amp;&amp; sudo update-ca-trust extract</code>.</p>
+          <p>A check at the top of the script refuses to run after the time you pick (one year at most). It's a guard against reusing old commands, not a lock: the script can be decoded from the command by hand.</p>
         </div>
       </div>
+      <p class="note">Don't put passwords or keys in a script; anything in the command ends up in shell history. To hand over a key, use <a href="f.html">Share a file</a>. For scripts you run often, a <a href="scripts.html">saved script</a> gives a short <code>curl</code> command.</p>
     </section>
   </main>
 
   <footer class="foot">
     <span>shellpin · Yousaf K Hamza</span>
-    <span id="generated" class="muted"></span>
+    <span class="muted">No uploads. No tracking. No server.</span>
   </footer>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 </body>

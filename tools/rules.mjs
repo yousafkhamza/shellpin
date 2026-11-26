@@ -18,6 +18,9 @@ const SECRET_PATTERNS = [
   ['an AWS secret key assignment', /aws_secret_access_key\s*[=:]\s*['"]?[A-Za-z0-9/+]{40}/i],
 ];
 
+/** Labels of credentials found in the text (empty when none). */
+export const findSecrets = (text) => SECRET_PATTERNS.filter(([, re]) => re.test(text)).map(([label]) => label);
+
 export const isoDay = (d) => d.toISOString().slice(0, 10);
 
 export function isValidDay(s) {

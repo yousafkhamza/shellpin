@@ -52,6 +52,8 @@ export async function build({ src, out, today, repo = '', branch = 'main' }) {
   for (const f of await readdir(join(ROOT, 'site'))) await copyFile(join(ROOT, 'site', f), join(out, f));
   await copyFile(join(ROOT, 'tools', 'rules.mjs'), join(out, 'rules.js'));
   await copyFile(join(ROOT, 'tools', 'filelink.mjs'), join(out, 'filelink.js'));
+  const runcmd = await readFile(join(ROOT, 'tools', 'runcmd.mjs'), 'utf8');
+  await writeFile(join(out, 'runcmd.js'), runcmd.replaceAll("'./filelink.mjs'", "'./filelink.js'"));
   await writeFile(join(out, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
   return manifest;
 }
