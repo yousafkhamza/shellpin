@@ -1,0 +1,16 @@
+{
+  "name": "shellpin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Run-once shell scripts for servers, hosted on GitHub Pages with an expiry date.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Yousaf K Hamza",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "check": "node tools/build.mjs --check",
+    "prune": "node tools/build.mjs --prune",
+    "test": "node --test"
+  }
+}

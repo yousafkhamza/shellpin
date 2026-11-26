@@ -1,0 +1,87 @@
+name: Check and publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Daily rebuild drops scripts whose @expires date has arrived (UTC).
+    - cron: '7 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: check scripts, test, build site
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Unit tests
+        run: node --test
+      - name: ShellCheck (warnings shown, errors fail)
+        run: |
+          command -v shellcheck >/dev/null || sudo apt-get install -y shellcheck
+          shopt -s nullglob
+          files=(scripts/*.sh)
+          [ ${#files[@]} -eq 0 ] && exit 0
+          shellcheck -f gcc -S warning "${files[@]}" | sed -E 's/^([^:]+):([0-9]+):([0-9]+): (warning|error): (.*)$/::\4 file=\1,line=\2,col=\3::\5/' || true
+          shellcheck -S error "${files[@]}"
+      - name: Check scripts and build the site
+        run: node tools/build.mjs
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+
+  prune:
+    # The site no longer serves expired scripts after `deploy`; this also removes them from main.
+    name: delete expired scripts from the repo
+    needs: deploy
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node tools/build.mjs --prune
+      - name: Commit removals
+        run: |
+          if [ -z "$(git status --porcelain scripts)" ]; then echo "nothing expired"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A scripts
+          git commit -m "chore: remove expired scripts"
+          git push
