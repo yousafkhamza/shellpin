@@ -15,6 +15,13 @@ SHELLPIN
 ```
 
 How it works:
+- **Asks only for the arguments the script takes.** The page reads the script and builds fields for:
+  - positional arguments (`ACTION="$1"`, `${2:-8080}`), with names, defaults and choices taken from the usage text (`create|reset|delete <username> [yes|no]`) and from `case` statements;
+  - flags from `getopts` or `--option` loops;
+  - settings read from environment variables (`${PEM_LINK_HOURS:-24}`), passed as `VAR=value` after `sudo`.
+
+  The script's own examples become one-click fills, a sample argument line is filled in for you, and `read -p` prompts are listed. A script with no arguments gets no fields.
+- **Compact (on by default).** Comment lines and blank lines are dropped before compressing, which makes `userctl.sh`'s command 22% shorter. Heredoc bodies, multi-line strings and lines after a `\` continuation are kept, and tests check that bash prints exactly the same output with and without it.
 - **No storage, no network.** The page gzips the script and base64-encodes it into the command. The page's Content-Security-Policy is `connect-src 'none'`, so the script never leaves the browser. The server needs no internet access and no TLS (no `curl` error 60), and no script file is left on disk.
 - **Safe to paste.** The whole script is decoded before anything runs. A cut-short or damaged paste fails `gunzip`'s checksum, and nothing runs.
 - **Interactive scripts work.** It runs through `bash -c`, so `read` prompts use the terminal, and the name you give becomes `$0`.

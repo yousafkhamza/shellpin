@@ -53,7 +53,8 @@ export async function build({ src, out, today, repo = '', branch = 'main' }) {
   await copyFile(join(ROOT, 'tools', 'rules.mjs'), join(out, 'rules.js'));
   await copyFile(join(ROOT, 'tools', 'filelink.mjs'), join(out, 'filelink.js'));
   const runcmd = await readFile(join(ROOT, 'tools', 'runcmd.mjs'), 'utf8');
-  await writeFile(join(out, 'runcmd.js'), runcmd.replaceAll("'./filelink.mjs'", "'./filelink.js'"));
+  await copyFile(join(ROOT, 'tools', 'argscan.mjs'), join(out, 'argscan.js'));
+  await writeFile(join(out, 'runcmd.js'), runcmd.replaceAll("'./filelink.mjs'", "'./filelink.js'").replaceAll("'./argscan.mjs'", "'./argscan.js'"));
   await writeFile(join(out, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
   return manifest;
 }

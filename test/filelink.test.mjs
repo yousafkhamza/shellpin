@@ -11,7 +11,7 @@ import { createLink, parseLink, openLink, toB64url, fromB64url, safeName, LinkEr
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PAGE = 'https://example.github.io/shellpin/f.html';
 const later = () => Date.now() / 1000 + 3600;
-const unix = process.platform !== 'win32';
+const unix = process.platform !== 'win32' || !!process.env.SHELLPIN_BASH_TESTS;
 
 test('base64url round-trips every length', () => {
   for (let n = 0; n < 40; n++) {

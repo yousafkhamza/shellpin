@@ -2,10 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { buildRunCommand, withGuard, encodeShare, decodeShare, scriptName } from '../tools/runcmd.mjs';
+import { buildRunCommand, withGuard, encodeShare, decodeShare, scriptName, compactScript } from '../tools/runcmd.mjs';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const script = (n) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'scripts', n), 'utf8');
 import { LinkError } from '../tools/filelink.mjs';
 
-const unix = process.platform !== 'win32';
+const unix = process.platform !== 'win32' || !!process.env.SHELLPIN_BASH_TESTS;
 const now = () => Math.floor(Date.now() / 1000);
 const SCRIPT = '#!/bin/bash\r\nset -e\r\necho "name=$0 args=$*"\r\nread -r -p "answer: " a\r\necho "got=$a"\r\n';
 
@@ -44,6 +49,18 @@ for (const oneLine of [false, true]) {
   });
 }
 
+test('environment settings are passed after sudo and quoted', { skip: !unix }, async () => {
+  const { command } = await buildRunCommand({
+    text: '#!/bin/bash\necho "hours=${PEM_LINK_HOURS:-24} note=${NOTE:-}"\n',
+    env: [['PEM_LINK_HOURS', '2'], ['NOTE', "it's ok"], ['EMPTY', ''], ['bad name', 'x']],
+    expires: now() + 60,
+  });
+  assert.match(command, /\)" && PEM_LINK_HOURS=2 NOTE='it'\\''s ok' bash -c "\$s" script$/);
+  assert.equal(paste(command).stdout, "hours=2 note=it's ok\n");
+  const sudo = await buildRunCommand({ text: 'echo', env: [['A', '1']], sudo: true, expires: now() + 60 });
+  assert.match(sudo.command, /&& sudo A=1 bash -c/);
+});
+
 test('expired command refuses to run', { skip: !unix }, async () => {
   const { command } = await buildRunCommand({ text: '#!/bin/bash\necho RAN\n', expires: now() - 5 });
   const r = paste(command);
@@ -67,10 +84,81 @@ test('a damaged or cut-short paste runs nothing', { skip: !unix }, async () => {
 });
 
 test('share link round-trips the form', async () => {
-  const s = { text: SCRIPT, name: 'userctl', args: 'create "a b"', sudo: true, expires: now() + 99 };
+  const s = { text: SCRIPT, name: 'userctl', args: 'create "a b"', sudo: true, expires: now() + 99, fields: { positional: ['create', 'a b'], options: {}, env: {}, extra: '' }, compact: true };
   const frag = await encodeShare(s);
   assert.match(frag, /^r1\.[A-Za-z0-9_-]+$/);
   assert.deepEqual(await decodeShare(`#${frag}`), s);
   await assert.rejects(decodeShare('#r1.AAAA'), LinkError);
   await assert.rejects(decodeShare('#nope'), LinkError);
+});
+
+// ---------- compact mode ----------
+const TRICKY = [
+  '#!/bin/bash',
+  '# a comment',
+  '',
+  'set -e',
+  'msg="line one',
+  '# not a comment: inside a string',
+  '',
+  'line three"',
+  'echo "$msg"',
+  "single='a",
+  '# still inside single quotes',
+  "b'",
+  'echo "$single"',
+  'cat <<EOF',
+  '# heredoc keeps this',
+  '',
+  'and the blank line above',
+  'EOF',
+  'cat <<-\'TABS\'',
+  '\t# tab heredoc',
+  '\tTABS',
+  'echo one \\',
+  '  two',
+  'x=abc; echo "${#x} $# done" # trailing comment',
+  'echo $(( 1 << 3 ))',
+  'cat <<< "here # string"',
+  '    # indented comment',
+  'echo "end"',
+].join('\n') + '\n';
+
+test('compactScript drops only comments and blank lines bash ignores', () => {
+  const c = compactScript(TRICKY);
+  assert.ok(c.startsWith('#!/bin/bash\nset -e\n'));
+  assert.ok(!c.includes('# a comment'));
+  assert.ok(!c.includes('# indented comment'));
+  for (const kept of ['# not a comment: inside a string', '# still inside single quotes', '# heredoc keeps this', '\t# tab heredoc', 'and the blank line above']) assert.ok(c.includes(kept), kept);
+  assert.match(c, /line one\n# not a comment: inside a string\n\nline three"/);
+  assert.match(c, /# heredoc keeps this\n\nand the blank line above/);
+  assert.ok(compactScript(script('userctl.sh')).length < script('userctl.sh').length * 0.7);
+});
+
+test('compactScript keeps the line after a backslash continuation', () => {
+  assert.equal(compactScript('#!/bin/bash\necho a \\\n\necho b\n'), '#!/bin/bash\necho a \\\n\necho b\n');
+  assert.equal(compactScript('#!/bin/bash\necho a \\\n# x\necho b\n'), '#!/bin/bash\necho a \\\n# x\necho b\n');
+});
+
+test('compactScript returns the original when quotes never close', () => {
+  const broken = '#!/bin/bash\n# c\necho "open\n';
+  assert.equal(compactScript(broken), broken);
+});
+
+test('compacted scripts print exactly the same in bash', { skip: !unix }, async () => {
+  for (const [label, text, args] of [
+    ['tricky', TRICKY, ''],
+    ['userctl usage', script('userctl.sh'), ''],
+    ['share usage', script('share.sh'), '--help'],
+  ]) {
+    const run = async (compact) => paste((await buildRunCommand({ text, name: 'x', args, expires: now() + 60, compact })).command);
+    const a = await run(false);
+    const b = await run(true);
+    assert.equal(b.stdout, a.stdout, `${label} stdout`);
+    assert.equal(b.stderr, a.stderr, `${label} stderr`);
+    assert.equal(b.status, a.status, `${label} status`);
+  }
+  const full = await buildRunCommand({ text: script('userctl.sh'), expires: now() + 60 });
+  const small = await buildRunCommand({ text: script('userctl.sh'), expires: now() + 60, compact: true });
+  assert.ok(small.command.length < full.command.length * 0.85, `${small.command.length} vs ${full.command.length}`);
 });

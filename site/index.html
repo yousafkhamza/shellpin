@@ -42,14 +42,37 @@
           <span id="size" class="muted"></span>
         </div>
 
-        <div class="grid3">
+        <!-- Built from the script: only the arguments it actually reads. -->
+        <div id="argpanel" class="argpanel" hidden>
+          <div class="argpanel-head">
+            <h3>Arguments</h3>
+            <span id="arg-summary" class="muted"></span>
+          </div>
+          <div id="arg-examples" class="chips" hidden></div>
+          <div id="arg-fields" class="argfields"></div>
+          <div id="opt-fields" class="argfields"></div>
+          <details id="env-box" class="token" hidden>
+            <summary>Settings <small class="muted">(environment variables the script reads)</small></summary>
+            <div id="env-fields" class="argfields"></div>
+          </details>
+          <p id="arg-prompts" class="note" hidden></p>
+          <label class="field extra">
+            <span>Extra arguments <small class="muted">(added as typed)</small></span>
+            <input id="extra" type="text" autocomplete="off" spellcheck="false">
+          </label>
+          <div class="row sample-row">
+            <span class="muted">Sample:</span>
+            <code id="arg-sample"></code>
+            <button type="button" id="use-sample">Use sample</button>
+            <button type="button" id="clear-args">Clear</button>
+          </div>
+        </div>
+        <p id="noargs" class="note" hidden>No arguments detected: the script runs as it is. <button type="button" id="add-args" class="linkish">Pass arguments anyway</button></p>
+
+        <div class="grid">
           <label class="field">
             <span>Name <small class="muted">($0 in the script)</small></span>
-            <input id="name" type="text" autocomplete="off" spellcheck="false" placeholder="userctl" maxlength="40">
-          </label>
-          <label class="field">
-            <span>Arguments</span>
-            <input id="args" type="text" autocomplete="off" spellcheck="false" placeholder="create jatin">
+            <input id="name" type="text" autocomplete="off" spellcheck="false" placeholder="script" maxlength="40">
           </label>
           <label class="field">
             <span>Command works for</span>
@@ -65,6 +88,7 @@
         </div>
         <div class="opts">
           <label class="check"><input type="checkbox" id="sudo"> Run with sudo</label>
+          <label class="check"><input type="checkbox" id="compact" checked> Compact <small class="muted">(drop comments and blank lines for a shorter command)</small></label>
           <label class="check"><input type="checkbox" id="oneline"> Single line <small class="muted">(for tools that can't paste multiple lines)</small></label>
         </div>
         <ul id="issues" class="issues" aria-live="polite"></ul>

@@ -206,3 +206,20 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .cmd.big code { white-space: pre; word-break: normal; font-size: .8rem; }
 .share-head { margin-top: 26px; margin-bottom: 4px; }
 #out { scroll-margin-top: 80px; }
+
+/* argument panel */
+.argpanel { margin: 18px 0 6px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); }
+.argpanel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.argpanel-head h3 { margin: 0; }
+.argfields { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0 14px; }
+.argfields .field > span { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.argfields .pos { font: 600 .75rem var(--mono); color: var(--muted); }
+.argfields .req { font-size: .72rem; color: var(--warn); font-weight: 500; }
+.argfields .check { margin: 6px 0 14px; }
+.argfields .check code { font-size: .85rem; }
+.chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.chips button { padding: 4px 10px; font: .8rem var(--mono); border-radius: 99px; }
+.sample-row code { padding: 4px 8px; background: var(--code-bg); border-radius: 6px; font-size: .82rem; overflow-wrap: anywhere; }
+.argpanel .extra { margin-top: 4px; }
+.argpanel .token { margin: 4px 0 12px; background: var(--panel); }
+.linkish { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font: inherit; cursor: pointer; }
