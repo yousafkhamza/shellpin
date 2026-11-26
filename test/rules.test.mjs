@@ -86,5 +86,7 @@ test('build writes live scripts, checksums and a manifest, and skips expired one
   assert.equal(m.scripts[0].shellSha256, createHash('sha256').update(shellPayload(body)).digest('hex'));
   await assert.rejects(readFile(join(out, 's', 'old.sh')));
   for (const f of ['index.html', 'app.js', 'style.css', 'rules.js', 'scripts.json', 'f.html', 'share.js', 'filelink.js', 'scripts.html', 'run.js', 'runcmd.js']) await readFile(join(out, f));
-  assert.match(await readFile(join(out, 'runcmd.js'), 'utf8'), /from './filelink.js'/);
+  const runcmd = await readFile(join(out, 'runcmd.js'), 'utf8');
+  assert.ok(runcmd.includes("from './filelink.js'"), 'runcmd.js must import the .js copy of filelink');
+  assert.ok(!runcmd.includes('filelink.mjs'), 'no .mjs import left in the browser copy');
 });
