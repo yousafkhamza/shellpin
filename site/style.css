@@ -183,3 +183,16 @@ button:disabled { opacity: .5; cursor: not-allowed; }
   font-size: .9rem; opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* file handoff page */
+.mono { font-family: var(--mono); overflow-wrap: anywhere; }
+.filecard { margin-top: 20px; }
+.filecard h2 { margin: 0; font-size: 1.2rem; }
+.filecard .row { margin-top: 12px; }
+.src.plain { padding: 12px 14px; white-space: pre; }
+.hint { margin-top: 18px; }
+.hint p { margin: 10px 0 6px; font-size: .88rem; }
+.hint pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; font-size: .82rem; }
+#c-out { margin-top: 16px; }
+#c-pass-row { margin: 8px 0 14px; }
+.foot a { color: var(--muted); }

@@ -85,5 +85,5 @@ test('build writes live scripts, checksums and a manifest, and skips expired one
   assert.equal(await readFile(join(out, 's', 'live.sh.sha256'), 'utf8'), `${sum}  live.sh\n`);
   assert.equal(m.scripts[0].shellSha256, createHash('sha256').update(shellPayload(body)).digest('hex'));
   await assert.rejects(readFile(join(out, 's', 'old.sh')));
-  for (const f of ['index.html', 'app.js', 'style.css', 'rules.js', 'scripts.json']) await readFile(join(out, f));
+  for (const f of ['index.html', 'app.js', 'style.css', 'rules.js', 'scripts.json', 'f.html', 'share.js', 'filelink.js']) await readFile(join(out, f));
 });

@@ -118,28 +118,63 @@ prepare_key_dir() {
 }
 
 ########################################
-# UPLOAD PEM
+# HAND OVER PEM
 ########################################
+
+# Packs the key into a shellpin file link (same format as share.sh). The key
+# goes inside the link after "#", which is never sent to any server, so
+# nothing is uploaded and no internet access is needed. The page turns the
+# link back into a <user>.pem download.
+#   PEM_LINK_HOURS=24   how long the page accepts the link (max 8760)
+#   PEM_PASSPHRASE=no   skip the passphrase (default: encrypt when openssl >= 1.1.1)
+SHELLPIN_URL="${SHELLPIN_URL:-https://yousafkhamza.github.io/shellpin}"
 
 upload_pem() {
 
-  local url=""
+  local pass="" data="" expires ossl="" bin hours="${PEM_LINK_HOURS:-24}"
 
-  # -f: a failed upload must not be mistaken for a URL. The key file is
-  # deleted right after this, so on failure print the key instead of losing it.
-  if url=$(curl -fsS \
-      --form-string "content=$(cat "$KEY_FILE")" \
-      -F "syntax=text" \
-      -F "expiry_days=1" \
-      https://dpaste.com/api/v2/) && [[ -n "$url" ]]; then
+  [[ "$hours" =~ ^[0-9]+$ ]] && (( hours >= 1 && hours <= 8760 )) || hours=24
+  expires=$(( $(date +%s) + hours * 3600 ))
+
+  # -pbkdf2 needs OpenSSL 1.1.1+ (Amazon Linux 2: `yum install -y openssl11`).
+  if [[ "${PEM_PASSPHRASE:-auto}" != "no" ]]; then
+    for bin in openssl openssl11 openssl3; do
+      if command -v "$bin" >/dev/null && "$bin" enc -aes-256-cbc -pbkdf2 -iter 1 -md sha256 -pass pass:x -in /dev/null >/dev/null 2>&1; then
+        ossl="$bin"; break
+      fi
+    done
+    if [[ -n "$ossl" ]]; then
+      pass=$("$ossl" rand -hex 12)
+    else
+      echo "Note: openssl is too old for a passphrase (yum install -y openssl11); the link below has none."
+    fi
+  fi
+
+  if data=$(set -o pipefail
+      { printf 'shellpin-file 1\nname: %s\nexpires: %s\n\n' "$USER.pem" "$expires"; cat "$KEY_FILE"; } \
+        | gzip -9n \
+        | if [[ -n "$pass" ]]; then
+            SHELLPIN_PASS="$pass" "$ossl" enc -aes-256-cbc -pbkdf2 -iter 250000 -md sha256 -salt -pass env:SHELLPIN_PASS
+          else
+            cat
+          fi \
+        | base64 | tr -d '\n=' | tr '+/' '-_') && [[ -n "$data" ]]; then
 
     echo ""
-    echo "PEM URL (expires in 1 day): $url"
+    echo "PEM link (opens for ${hours}h; nothing was uploaded):"
+    echo "${SHELLPIN_URL%/}/f.html#f1.$([[ -n "$pass" ]] && echo p || echo z).$data"
+
+    if [[ -n "$pass" ]]; then
+      echo ""
+      echo "Passphrase: $pass"
+      echo "Send the passphrase through a different channel than the link."
+    fi
 
   else
 
+    # The key file is deleted right after this; never lose it silently.
     echo ""
-    echo "PEM upload failed. Copy the private key below now; it is deleted from this server next."
+    echo "Could not build the PEM link. Copy the private key below now; it is deleted from this server next."
     echo ""
     cat "$KEY_FILE"
   fi

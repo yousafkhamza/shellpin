@@ -20,7 +20,32 @@ It replaces pastebin-style hosting (dpaste and similar) for scripts you run ofte
   ```
 - **Publish from the browser.** Paste or drop a `.sh` file, pick an expiry (1 day to 1 year), then either open GitHub's new-file page pre-filled or commit directly with a fine-grained token. The token stays in session storage and is only sent to `api.github.com`.
 - **Guard rails in CI.** Every push checks name format, expiry (present, valid, ≤ 365 days), LF line endings, a shebang, size (≤ 120 KB, which keeps `bash -c` under the kernel's per-argument limit) and literal credentials (private keys, AWS/GitHub/Slack/Google keys). ShellCheck errors fail the build; warnings appear as annotations.
+- **File handoff without uploads.** Hand over an SSH key, kubeconfig or `.env` as a link (see below).
 - **Static, no dependencies.** It's a Node build script and a plain HTML/JS page. There's nothing to install and no server to run.
+
+## Handing over a key or file
+
+```bash
+curl -fsSL https://yousafkhamza.github.io/shellpin/s/share.sh | bash -s -- ./jatin.pem --hours 24
+```
+```
+Link for jatin.pem (opens until 2026-11-27 13:00 UTC; nothing was uploaded):
+https://yousafkhamza.github.io/shellpin/f.html#f1.p.U2FsdGVkX1…
+
+Passphrase: 6fa1a3ee7518d2f7d7838899
+Send the passphrase through a different channel than the link.
+```
+
+The file is gzipped, encrypted with `openssl enc -aes-256-cbc -pbkdf2 -iter 250000`, and placed after the `#` in the link. Browsers never send that part to a server, so the file isn't stored anywhere: not on GitHub Pages, not on a paste site. The script also needs no network once it's on the server.
+
+The receiver opens the link and enters the passphrase. [f.html](site/f.html) decrypts it in the browser and offers `jatin.pem` as a download, along with the `chmod 600` / `icacls` and `ssh -i` commands. The page's Content-Security-Policy is `connect-src 'none'`, so it can't send the file anywhere. The same page can also make links from a file in your browser.
+
+`userctl.sh` uses the same link for new PEM keys, so it no longer depends on dpaste. Set `PEM_LINK_HOURS=2` to shorten the window, or `PEM_PASSPHRASE=no` for a link without a passphrase.
+
+Limits:
+- Up to 64 KB per file. An RSA-4096 key makes a link of about 3,500 characters.
+- Passphrases need OpenSSL 1.1.1 or newer on the server. Amazon Linux 2's default 1.0.2 falls back to a link without a passphrase and prints a warning; `yum install openssl11` adds support.
+- Expiry is enforced by the page. Someone who keeps a link and decodes it by hand isn't stopped, so delete links after use and rotate a key if one leaks.
 
 ## Adding a script
 
@@ -75,7 +100,7 @@ Node 20 or newer, no `npm install` needed.
 
 **`curl: (60) SSL certificate … unable to get local issuer certificate`**
 
-The server can't verify the TLS certificate. Its CA bundle is missing or stale, or a proxy is re-signing HTTPS. Don't switch to `curl -k`: that lets anyone on the path swap the script you're running as root.
+The server can't verify that host's TLS certificate. If GitHub Pages works but one other host fails (dpaste.com did this), the fault is that host's certificate chain, so stop depending on it. If every host fails, the server's CA bundle is missing or stale, or a proxy is re-signing HTTPS. Don't switch to `curl -k`: that lets anyone on the path swap the script you're running as root.
 
 ```bash
 # Amazon Linux 2 / RHEL / CentOS

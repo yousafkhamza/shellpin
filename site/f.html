@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- connect-src 'none': this page cannot send anything anywhere. The file is decoded in your browser. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>shellpin: file handoff</title>
+  <meta name="color-scheme" content="dark light">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314181f'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='%23c6f36b' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M16 22h8' stroke='%23c6f36b' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="share.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="top">
+    <a class="brand" href="./" aria-label="shellpin home"><span class="mark" aria-hidden="true">&gt;_</span>shellpin</a>
+    <nav aria-label="Sections">
+      <a href="./#scripts">Scripts</a>
+      <a href="f.html" aria-current="page">Share a file</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <!-- Receiving: shown when the page is opened with a #f1. link -->
+    <section id="receive" class="hero" hidden aria-labelledby="r-title">
+      <h1 id="r-title">Someone shared a file with you</h1>
+      <p>It's packed inside the link itself. This page decodes it in your browser and cannot send it anywhere.</p>
+
+      <div class="pub filecard">
+        <form id="r-pass-form" hidden novalidate>
+          <label class="field">
+            <span>Passphrase <small class="muted">(the sender gave it to you separately)</small></span>
+            <div class="row">
+              <input id="r-pass" type="password" autocomplete="off" spellcheck="false" autocapitalize="off" required>
+              <button type="submit" class="primary">Unlock</button>
+            </div>
+          </label>
+        </form>
+
+        <div id="r-file" hidden>
+          <div class="detail-head">
+            <h2 id="r-name" class="mono"></h2>
+            <span id="r-badge" class="badge"></span>
+          </div>
+          <p id="r-meta" class="muted"></p>
+          <div class="row">
+            <button type="button" id="r-dl" class="primary">Download</button>
+            <button type="button" id="r-copy" hidden>Copy contents</button>
+            <button type="button" id="r-show" hidden>Show contents</button>
+          </div>
+          <pre id="r-text" class="src plain" hidden tabindex="0" aria-label="File contents"></pre>
+          <div id="r-ssh" class="hint" hidden>
+            <h3>Use the key</h3>
+            <p class="muted">macOS / Linux:</p>
+            <pre><code id="r-ssh-nix"></code></pre>
+            <p class="muted">Windows (PowerShell): restrict the file to your account, then connect:</p>
+            <pre><code id="r-ssh-win"></code></pre>
+          </div>
+        </div>
+
+        <p id="r-status" class="status" role="status"></p>
+      </div>
+      <p class="note">After you've saved the file, delete the link from the chat or email it came in. Anyone who has the link (and the passphrase, if there is one) can open it until it expires.</p>
+    </section>
+
+    <!-- Creating: shown otherwise -->
+    <section id="create" class="hero" hidden aria-labelledby="c-title">
+      <h1 id="c-title">Hand over a file as a link</h1>
+      <p>For SSH keys, kubeconfigs and <code>.env</code> files. The file is packed into the link after the <code>#</code>, which browsers never send to a server, so it isn't uploaded or stored anywhere. Add a passphrase and send it by a different channel.</p>
+    </section>
+
+    <section id="create-from-server" aria-labelledby="srv-h" hidden>
+      <h2 id="srv-h">From a server</h2>
+      <p class="lead">Needs only <code>bash</code>, <code>gzip</code>, <code>base64</code> and <code>openssl</code>. It works on servers with no outbound access once the script is on them. Passphrases need OpenSSL 1.1.1 or newer.</p>
+      <div class="cmd">
+        <pre><code id="srv-cmd"></code></pre>
+        <button type="button" id="srv-copy" class="primary">Copy</button>
+      </div>
+      <p class="note">Options: <code>--hours N</code> (default 24, max 8760), <code>--name NAME</code>, <code>--no-passphrase</code>.</p>
+    </section>
+
+    <section id="create-here" aria-labelledby="here-h" hidden>
+      <h2 id="here-h">From this browser</h2>
+      <form id="c-form" class="pub" novalidate>
+        <label class="field">
+          <span>File <small class="muted">(drop it on this box, pick it, or paste text below)</small></span>
+          <div class="row">
+            <label class="btn file">Choose file<input id="c-file" type="file"></label>
+            <span id="c-file-info" class="muted"></span>
+          </div>
+        </label>
+        <label class="field">
+          <span>…or paste text</span>
+          <textarea id="c-text" rows="6" spellcheck="false" autocomplete="off" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+        </label>
+        <div class="grid">
+          <label class="field">
+            <span>File name</span>
+            <input id="c-name" type="text" autocomplete="off" spellcheck="false" placeholder="jatin.pem" maxlength="100">
+          </label>
+          <label class="field">
+            <span>Page accepts the link for</span>
+            <select id="c-hours">
+              <option value="1">1 hour</option>
+              <option value="24" selected>24 hours</option>
+              <option value="168">7 days</option>
+              <option value="720">30 days</option>
+              <option value="8760">1 year (max)</option>
+            </select>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" id="c-usepass" checked> Protect with a passphrase</label>
+        <div class="row" id="c-pass-row">
+          <input id="c-pass" type="text" autocomplete="off" spellcheck="false" aria-label="Passphrase">
+          <button type="button" id="c-regen">New passphrase</button>
+        </div>
+        <div class="row actions">
+          <button type="submit" class="primary">Make link</button>
+        </div>
+        <p id="c-status" class="status" role="status"></p>
+
+        <div id="c-out" hidden>
+          <label class="field">
+            <span>Link <small id="c-len" class="muted"></small></span>
+            <div class="cmd">
+              <pre><code id="c-link"></code></pre>
+              <button type="button" id="c-copy-link" class="primary">Copy</button>
+            </div>
+          </label>
+          <label class="field" id="c-pass-out">
+            <span>Passphrase <small class="muted">(send by a different channel)</small></span>
+            <div class="cmd">
+              <pre><code id="c-pass-show"></code></pre>
+              <button type="button" id="c-copy-pass">Copy</button>
+            </div>
+          </label>
+        </div>
+      </form>
+    </section>
+
+    <section id="open" aria-labelledby="open-h" hidden>
+      <h2 id="open-h">Open a link</h2>
+      <form id="o-form" class="row" novalidate>
+        <input id="o-link" type="text" autocomplete="off" spellcheck="false" placeholder="Paste a shellpin file link (…/f.html#f1.…)" aria-label="Paste a link">
+        <button type="submit">Open</button>
+      </form>
+      <p id="o-status" class="status" role="status"></p>
+    </section>
+
+    <section class="help" aria-labelledby="help-h">
+      <h2 id="help-h">How safe is this?</h2>
+      <div class="cards">
+        <div>
+          <h3>Nothing is stored</h3>
+          <p>No server ever receives the file: not GitHub, not a paste site. This page's security policy blocks every network request, and you can check it in the page source.</p>
+        </div>
+        <div>
+          <h3>The link is the secret</h3>
+          <p>Without a passphrase, anyone holding the link can open the file. With one, the link alone is useless. It's AES-256 with a PBKDF2 key (250,000 rounds), the same as <code>openssl enc -pbkdf2</code>.</p>
+        </div>
+        <div>
+          <h3>Expiry is a soft limit</h3>
+          <p>The page won't open a link after its time is up, but someone who saved the link and decodes it by hand isn't stopped. Delete links after use, and rotate a key if a link leaks.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>shellpin · Yousaf K Hamza</span>
+    <a href="./">Scripts</a>
+  </footer>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
