@@ -24,12 +24,44 @@ How it works:
 - **Compact (on by default).** Comment lines and blank lines are dropped before compressing, which makes `userctl.sh`'s command 22% shorter. Heredoc bodies, multi-line strings and lines after a `\` continuation are kept, and tests check that bash prints exactly the same output with and without it.
 - **No storage, no network.** The page gzips the script and base64-encodes it into the command. The page's Content-Security-Policy is `connect-src 'none'`, so the script never leaves the browser. The server needs no internet access and no TLS (no `curl` error 60), and no script file is left on disk.
 - **Safe to paste.** The whole script is decoded before anything runs. A cut-short or damaged paste fails `gunzip`'s checksum, and nothing runs.
-- **Interactive scripts work.** It runs through `bash -c`, so `read` prompts use the terminal, and the name you give becomes `$0`.
+- **Interactive scripts work.** The script runs with the terminal as its input, so `read`, `Read-Host` and `input()` prompts work, and the name you give becomes `$0` (or `argv[0]`).
 - **Expiry.** A guard line at the top of the script refuses to run after the chosen time. It stops old commands being reused, but it isn't a lock: anyone can decode the command by hand.
 - **Share link.** "Copy share link" puts the script and settings into the part of the URL after `#`, so a colleague opens the same command. Nothing is stored here either.
 - **Size.** Scripts can be up to 120 KB. A 12 KB script makes a command of about 5 KB, which pastes fine into any SSH terminal. A single-line mode is there for tools that can't paste multiple lines.
 
-The command, and the script inside it, ends up in the server's shell history. Don't put secrets in scripts.
+The command, and the script inside it, ends up in the server's shell history. Don't put secrets in scripts; use "ask on server" (below) instead.
+
+### Languages
+
+The language is detected from the file name, the shebang or the content, and you can change it.
+
+| Language | Command runs it with | Arguments detected from |
+|---|---|---|
+| Bash | `bash -c "$s" name args` | usage text, `case`, `$1`…, `getopts`, `--option` loops |
+| sh (POSIX, Alpine, BusyBox) | `sh -c "$s" name args` | same as Bash |
+| PowerShell (5.1 and 7) | a decoded `[scriptblock]`, in a new PowerShell process by default | `param()`: `[ValidateSet]` becomes a dropdown, `[switch]` a checkbox, `Mandatory` marks a field required, `.EXAMPLE` lines become examples |
+| Python 3 | `python3 -c "$s" args` (with `argv[0]` set to the name) | `argparse` (`choices`, `default`, `required`, `nargs`, `store_true`) or `sys.argv[n]` |
+
+PowerShell runs in a new process by default, so an `exit` in the script doesn't close your window. Very large scripts (over about 22 KB compressed) run in the current window instead, because Windows limits the size of one environment variable. The PowerShell version of "sudo" is **Require administrator**, which stops with a clear message unless the window was opened with "Run as administrator".
+
+### Where it runs
+
+| Run on | Command |
+|---|---|
+| The machine you paste into | as above |
+| A Kubernetes pod | `kubectl exec -it POD -n NS [-c CONTAINER] -- sh -c "$s" …`. Decoded on your machine, so the container needs only the interpreter. |
+| A Docker container | `docker exec -it [-u root] CONTAINER sh -c "$s" …` |
+| Servers over SSH | `ssh -t host '…'`, or a loop over several hosts with a `== host` header for each |
+
+### Safety
+
+- **Danger warnings.** Before you copy, the page flags lines such as `rm -rf "$VAR"`, `mkfs`, `dd of=/dev/…`, `chmod 777`, a nested `curl | bash`, a firewall flush, `userdel`, `reboot` and `kubectl delete`. For PowerShell it flags `Remove-Item -Recurse`, `Format-Volume` and `iex (iwr …)`; for Python, `shutil.rmtree` and `shell=True`.
+- **Preview command.** A second command prints the script on the server instead of running it, so whoever runs it can read it first.
+- **Only run on hosts.** Patterns such as `prod-db-*, web-1`. On any other host the script refuses to run (`uname -n`, or `[Environment]::MachineName`), which protects against the wrong terminal.
+- **Ask on server.** Environment settings the script reads (`$DB_PASSWORD`, `${PORT:-80}`, `$env:TOKEN`, `os.environ.get(...)`) appear as fields. Names containing PASS, SECRET, TOKEN or KEY default to "ask on server": the script asks for the value with typing hidden, so it never appears in the command, chat or history.
+- **Fingerprint.** The first 8 characters of the script's SHA-256 appear at the start of the command (`: shellpin-a1b2c3d4;` or `<# shellpin a1b2c3d4 #>`) and in the preview, so a colleague can confirm they have the same script.
+
+The expiry, host lock and secret prompts are written into the script, so they apply on SSH hosts and in containers too.
 
 ## Also in shellpin
 

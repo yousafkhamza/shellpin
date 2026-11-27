@@ -223,3 +223,15 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .argpanel .extra { margin-top: 4px; }
 .argpanel .token { margin: 4px 0 12px; background: var(--panel); }
 .linkish { padding: 0; border: 0; background: none; color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font: inherit; cursor: pointer; }
+
+/* languages, targets, safety */
+.inline-field { display: inline-flex; align-items: center; gap: 8px; font-size: .9rem; }
+.inline-field select { width: auto; }
+.envfields { display: grid; gap: 4px 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.envfields .field { margin-bottom: 4px; }
+.envfields .check { margin: 0 0 12px; font-size: .82rem; }
+.issues .warn { color: var(--warn); border-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.issues .warn code { color: var(--text); font-size: .8rem; overflow-wrap: anywhere; }
+.preview-box { margin-top: 10px; }
+.preview-box .cmd pre { max-height: 200px; }
+#out .section-head .row { gap: 6px; }

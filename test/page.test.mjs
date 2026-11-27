@@ -54,14 +54,18 @@ function freshDom(hash = '') {
     el.hidden = /\shidden\b/.test(attrs);
     el.checked = /\schecked\b/.test(attrs);
   }
-  // <select id="hours"> options, with the selected one as value.
-  const sel = /<select id="hours">([\s\S]*?)<\/select>/.exec(html)[1];
-  for (const o of sel.matchAll(/<option value="(\d+)"( selected)?>([^<]*)<\/option>/g)) {
-    const opt = new El('option');
-    Object.assign(opt, { value: o[1] });
-    opt.textContent = o[3];
-    registry.get('hours').append(opt);
-    if (o[2]) registry.get('hours').value = o[1];
+  // Every <select id="..."> gets its options; value is the selected one, or the first.
+  for (const s of html.matchAll(/<select id="([^"]+)">([\s\S]*?)<\/select>/g)) {
+    const select = registry.get(s[1]);
+    let first = true;
+    for (const o of s[2].matchAll(/<option value="([^"]*)"( selected)?>([^<]*)<\/option>/g)) {
+      const opt = new El('option');
+      Object.assign(opt, { value: o[1] });
+      opt.textContent = o[3];
+      select.append(opt);
+      if (o[2] || first) select.value = o[1];
+      first = false;
+    }
   }
   const clip = { text: '' };
   globalThis.document = { getElementById: (id) => registry.get(id) ?? null, createElement: (t) => new El(t), body: new El('body'), execCommand() {} };
@@ -189,4 +193,86 @@ test('compact is on by default and shortens the command', async () => {
   $('compact').fire('change');
   await sleep(150);
   assert.ok($('cmd').textContent.length > short.length + 800, `${$('cmd').textContent.length} vs ${short.length}`);
+});
+
+const PS1 = [
+  '<#',
+  '.EXAMPLE',
+  'PS> .\\efs.ps1 -Action mount -Target fs-1',
+  '#>',
+  'param(',
+  "  [Parameter(Mandatory)] [ValidateSet('mount','unmount')] [string]$Action,",
+  '  [string]$Target,',
+  '  [switch]$Force',
+  ')',
+  "$ErrorActionPreference = 'Stop'",
+  'Write-Output "$Action $Target $env:DB_PASSWORD"',
+  'Remove-Item C:\\temp\\x -Recurse -Force',
+].join('\n');
+
+test('PowerShell: detected, parameters become fields, admin and new-process options', async () => {
+  const { $ } = await loadPage();
+  await type($, 't', PS1);
+  assert.equal($('lang').options[0].textContent, 'Auto (PowerShell)');
+  assert.deepEqual($('pos-1').options.map((o) => o.value), ['', 'mount', 'unmount']);
+  assert.equal($('opt-0').type, 'checkbox');
+  assert.equal($('sudo-label').textContent, 'Require administrator');
+  assert.equal($('newproc-box').hidden, false);
+  assert.equal($('target').disabled, true);
+  // DB_PASSWORD is treated as a secret: asked on the server, not typed here.
+  assert.equal($('ask-DB_PASSWORD').checked, true);
+  assert.equal($('env-DB_PASSWORD').disabled, true);
+  assert.equal($('dangers').hidden, false);
+  assert.match($('dangers').textContent, /Line 12: Recursive delete/);
+
+  $('arg-examples').children.find((c) => c.tagName === 'BUTTON').click();
+  await sleep(150);
+  $('opt-0').checked = true;
+  $('opt-0').fire('change');
+  await sleep(150);
+  const cmd = $('cmd').textContent;
+  assert.match(cmd, /^<# shellpin [0-9a-f]{8} #> \$env:SHELLPIN_S=@'\n/);
+  assert.match(cmd, /-EncodedCommand/);
+  assert.match($('fp').textContent, /^fingerprint [0-9a-f]{8}$/);
+  assert.match($('pcmd').textContent, /; \$s$/);
+  assert.match($('cmd-note').textContent, /PowerShell/);
+});
+
+test('targets: Kubernetes, Docker and SSH fields shape the command', async () => {
+  const { $ } = await loadPage();
+  await type($, 't', '#!/bin/sh\necho "hi $1"\n');
+  assert.equal($('lang').options[0].textContent, 'Auto (sh)');
+  $('target').value = 'kubectl';
+  $('target').fire('change');
+  await sleep(100);
+  assert.equal($('target-kubectl').hidden, false);
+  assert.match($('issues').textContent, /Enter the pod name/);
+  await type($, 'k-pod', 'api-1');
+  await type($, 'k-ns', 'prod');
+  assert.match($('cmd').textContent, /&& kubectl exec -it api-1 -n prod -- sh -c "\$s" script/);
+
+  $('target').value = 'docker';
+  $('target').fire('change');
+  await type($, 'd-c', 'web_1');
+  assert.match($('cmd').textContent, /&& docker exec -it web_1 sh -c "\$s" script/);
+
+  $('target').value = 'ssh';
+  $('target').fire('change');
+  await type($, 's-hosts', 'web1, web2');
+  assert.match($('cmd').textContent, /for h in web1 web2; do echo "== \$h"; ssh -t "\$h" '/);
+  assert.match($('cmd-note').textContent, /each host/);
+});
+
+test('host lock and secrets go into the script, not the command', async () => {
+  const { $ } = await loadPage();
+  await type($, 't', '#!/bin/bash\nset -e\nmysql -p"$DB_PASSWORD" -h "${DB_HOST:-localhost}"\n');
+  assert.equal($('ask-DB_PASSWORD').checked, true);
+  assert.equal($('ask-DB_HOST').checked, false);
+  await type($, 'env-DB_HOST', 'db.internal');
+  await type($, 'hostlock', 'prod-db-*, web-1');
+  assert.match($('cmd').textContent, /&& DB_HOST=db\.internal bash -c/);
+  assert.doesNotMatch($('cmd').textContent, /DB_PASSWORD/);
+  await type($, 'hostlock', 'bad;host');
+  assert.match($('issues').textContent, /Host pattern "bad;host"/);
+  assert.equal($('out').hidden, true);
 });

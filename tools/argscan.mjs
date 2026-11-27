@@ -210,7 +210,7 @@ export function sampleFor(label = '', choices = [], dflt = '') {
  *   examples: string[], prompts: string[], usage: string, hasArgs: boolean, takesAny: boolean
  * }}
  */
-export function scanArgs(text) {
+function scanShell(text) {
   const lines = codeLines(text);
   markFunctions(lines, text);
   const blocks = caseBlocks(lines);
@@ -312,6 +312,17 @@ export function scanArgs(text) {
     seen.add(name);
     env.push({ name, default: /[$`]/.test(m[2]) ? '' : m[2] });
   }
+  // Plain $VAR / ${VAR} the script reads but never sets (skipped when it sources other files, which may set them).
+  if (!/^\s*(\.|source)\s+\S/m.test(codeText)) {
+    for (const m of codeText.matchAll(/\$\{?([A-Z][A-Z0-9_]{2,})\b/g)) {
+      const name = m[1];
+      if (SHELL_VARS.has(name) || seen.has(name) || /^(BASH_\w+|FUNCNAME|PIPESTATUS|GROUPS|PPID|SHLVL|COLUMNS|LINES|HISTFILE|MAIL\w*|DISPLAY|SSH_\w+)$/.test(name)) continue;
+      const set = new RegExp(`(?:^|[\\s;(])(?:local\\s+|export\\s+|readonly\\s+|declare\\s+\\S*\\s*)?${name}(\\[[^\\]]*\\])?\\+?=|\\bread\\b[^\\n;|&]*\\b${name}\\b|\\bfor\\s+${name}\\s+in\\b|\\bgetopts\\s+\\S+\\s+${name}\\b|\\bmapfile\\b[^\\n;]*\\b${name}\\b`, 'm');
+      if (set.test(codeText)) continue;
+      seen.add(name);
+      env.push({ name, default: '' });
+    }
+  }
 
   const prompts = [...text.matchAll(/\bread\b[^\n]*?-p\s+(?:"([^"]*)"|'([^']*)')/g)].map((m) => (m[1] ?? m[2]).trim()).filter(Boolean);
 
@@ -347,6 +358,7 @@ export function splitArgs(s) {
  * @param {{positional: string[], options: Record<string, string|boolean>, extra?: string}} v
  */
 export function buildArgs(scan, v) {
+  if (scan.lang === 'powershell') return buildPsArgs(scan, v);
   const parts = [];
   for (const o of scan.options) {
     const val = v.options?.[o.flag];
@@ -365,6 +377,7 @@ export function buildArgs(scan, v) {
 
 /** Maps an example string onto form values. */
 export function fillFromExample(scan, example) {
+  if (scan.lang === 'powershell') return fillPsExample(scan, example);
   const words = splitArgs(example);
   const positional = [];
   const options = {};
@@ -382,4 +395,221 @@ export function fillFromExample(scan, example) {
     positional.splice(n - 1, positional.length, positional.slice(n - 1).map(shq).join(' '));
   }
   return { positional, options, extra };
+}
+
+// =============================================================================================
+// Other languages. Every scanner returns the same shape, plus `lang`.
+
+/** @param {'bash'|'sh'|'powershell'|'python'} lang */
+export function scanArgs(text, lang = 'bash') {
+  const t = String(text).replace(/\r\n?/g, '\n');
+  if (lang === 'powershell') return { ...scanPowerShell(t), lang };
+  if (lang === 'python') return { ...scanPython(t), lang };
+  return { ...scanShell(t), lang };
+}
+
+/** Quotes a PowerShell argument only when needed ('' doubles a quote). */
+export function psq(v) {
+  const s = String(v);
+  return /^[A-Za-z0-9_.:/\\+=~-]+$/.test(s) && !s.startsWith('-') ? s : `'${s.replace(/'/g, "''")}'`;
+}
+
+/** Splits text at top-level commas (outside (), [], {}, quotes). */
+function splitTop(s) {
+  const out = [];
+  let depth = 0;
+  let q = '';
+  let cur = '';
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q) {
+      if (c === q) q = '';
+      else if (c === '`' && q === '"') cur += s[i++];
+    } else if (c === "'" || c === '"') q = c;
+    else if ('([{'.includes(c)) depth++;
+    else if (')]}'.includes(c)) depth--;
+    else if (c === ',' && depth === 0) {
+      out.push(cur);
+      cur = '';
+      continue;
+    }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+
+const unq = (s) => String(s).trim().replace(/^(['"])([\s\S]*)\1$/, '$2');
+const literals = (s) => [...String(s).matchAll(/'((?:[^']|'')*)'|"((?:[^"`]|`.)*)"/g)].map((m) => (m[1] ?? m[2]).replace(/''/g, "'"));
+
+function scanPowerShell(text) {
+  const positional = [];
+  const options = [];
+  const noComments = text.replace(/<#[\s\S]*?#>/g, '').replace(/(^|\s)#(?!requires).*$/gim, '$1');
+  const m = /^\s*(?:\[[\s\S]*?\]\s*)*param\s*\(/im.exec(noComments);
+  if (m) {
+    const open = m.index + m[0].length - 1;
+    let depth = 0;
+    let end = -1;
+    let q = '';
+    for (let i = open; i < noComments.length; i++) {
+      const c = noComments[i];
+      if (q) {
+        if (c === q) q = '';
+      } else if (c === "'" || c === '"') q = c;
+      else if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    const body = end > 0 ? noComments.slice(open + 1, end) : '';
+    const params = splitTop(body).map((chunk) => {
+      const name = /\$([A-Za-z_]\w*)\s*(=|$)/m.exec(chunk) || /\$([A-Za-z_]\w*)/.exec(chunk);
+      if (!name) return null;
+      const attrs = chunk.slice(0, name.index);
+      const dflt = /\$[A-Za-z_]\w*\s*=\s*([\s\S]+)$/.exec(chunk)?.[1]?.trim() || '';
+      const paramAttr = /\[Parameter\s*\(([\s\S]*?)\)\s*\]/i.exec(attrs)?.[1] || '';
+      return {
+        name: name[1],
+        type: /\[(switch|string|int|int32|int64|bool|double|datetime|string\[\]|securestring|pscredential)\]/i.exec(attrs)?.[1]?.toLowerCase() || '',
+        required: /\bMandatory\b(?!\s*=\s*\$false)/i.test(paramAttr),
+        help: unq(/\bHelpMessage\s*=\s*('[^']*'|"[^"]*")/i.exec(paramAttr)?.[1] || ''),
+        choices: literals(/\[ValidateSet\s*\(([\s\S]*?)\)\s*\]/i.exec(attrs)?.[1] || ''),
+        default: /^\$(true|false|null)$/i.test(dflt) || /[$(]/.test(dflt) ? '' : unq(dflt),
+      };
+    }).filter(Boolean);
+    let idx = 0;
+    for (const p of params) {
+      if (p.type === 'switch') {
+        options.push({ flag: `-${p.name}`, aliases: [`-${p.name}`], takesValue: false, label: p.help, sample: '' });
+        continue;
+      }
+      idx++;
+      positional.push({
+        index: idx,
+        name: p.name,
+        label: p.name,
+        required: p.required,
+        choices: p.choices,
+        default: p.default,
+        sample: sampleFor(p.name, p.choices, p.default),
+        variadic: false,
+        flag: `-${p.name}`,
+        help: p.help,
+        type: p.type,
+        secret: p.type === 'securestring' || p.type === 'pscredential',
+      });
+    }
+  }
+
+  // Comment-based help examples: the line after .EXAMPLE, minus the prompt and the script name.
+  const examples = [];
+  for (const ex of text.matchAll(/^\s*\.EXAMPLE\s*\n\s*(?:PS\s*[^>\n]*>\s*)?(.+)$/gim)) {
+    const line = ex[1].trim().replace(/^&\s*/, '').replace(/^(\.[\\/])?[\w.\\/-]+\.ps1\b\s*/i, '');
+    if (line) examples.push(line);
+  }
+
+  const env = [];
+  const assigned = new Set([...text.matchAll(/\$env:([A-Za-z_]\w*)\s*=(?!=)/gi)].map((x) => x[1].toUpperCase()));
+  for (const e of text.matchAll(/\$env:([A-Za-z_]\w*)/gi)) {
+    const name = e[1];
+    if (assigned.has(name.toUpperCase()) || SHELL_VARS.has(name.toUpperCase()) || /^(USERNAME|USERPROFILE|COMPUTERNAME|TEMP|TMP|APPDATA|LOCALAPPDATA|PROGRAMFILES|SYSTEMROOT|WINDIR|PSMODULEPATH|SHELLPIN_S)$/i.test(name)) continue;
+    if (!env.some((x) => x.name.toUpperCase() === name.toUpperCase())) env.push({ name, default: '' });
+  }
+  const prompts = [...text.matchAll(/\bRead-Host\b\s+(?:-Prompt\s+)?(['"])(.*?)\1/gi)].map((x) => x[2]);
+  return { positional, options, env, examples: [...new Set(examples)].slice(0, 8), prompts: [...new Set(prompts)], usage: '', hasArgs: positional.length + options.length > 0, takesAny: false };
+}
+
+function buildPsArgs(scan, v) {
+  const parts = [];
+  scan.positional.forEach((p, i) => {
+    const val = v.positional?.[i];
+    if (val) parts.push(`${p.flag || ''} ${psq(val)}`.trim());
+  });
+  for (const o of scan.options) if (v.options?.[o.flag] === true) parts.push(o.flag);
+  if (v.extra?.trim()) parts.push(v.extra.trim());
+  return parts.join(' ');
+}
+
+function fillPsExample(scan, example) {
+  const words = splitArgs(example);
+  const positional = scan.positional.map(() => '');
+  const options = {};
+  const loose = [];
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (/^-\w/.test(w)) {
+      const name = w.slice(1).replace(/:.*$/, '').toLowerCase();
+      const pi = scan.positional.findIndex((p) => p.name.toLowerCase() === name);
+      const oi = scan.options.findIndex((o) => o.flag.slice(1).toLowerCase() === name);
+      if (pi >= 0) positional[pi] = w.includes(':') ? w.slice(w.indexOf(':') + 1) : words[++i] ?? '';
+      else if (oi >= 0) options[scan.options[oi].flag] = true;
+      else loose.push(w);
+    } else loose.push(w);
+  }
+  // Unnamed values fill the remaining parameters in order.
+  while (loose.length && !/^-/.test(loose[0])) {
+    const free = positional.findIndex((x) => !x);
+    if (free < 0) break;
+    positional[free] = loose.shift();
+  }
+  return { positional, options, extra: loose.map(psq).join(' ') };
+}
+
+function scanPython(text) {
+  const positional = [];
+  const options = [];
+  const calls = [];
+  for (const m of text.matchAll(/\badd_argument\s*\(/g)) {
+    let depth = 0;
+    let q = '';
+    let end = -1;
+    for (let i = m.index + m[0].length - 1; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '\\') i++;
+        else if (c === q) q = '';
+      } else if (c === '"' || c === "'") q = c;
+      else if (c === '(') depth++;
+      else if (c === ')' && --depth === 0) {
+        end = i;
+        break;
+      }
+    }
+    if (end > 0) calls.push(text.slice(m.index + m[0].length, end));
+  }
+  for (const call of calls) {
+    const parts = splitTop(call);
+    const names = parts.filter((p) => /^\s*['"]/.test(p)).map(unq);
+    const kw = Object.fromEntries(parts.filter((p) => /^\s*\w+\s*=/.test(p)).map((p) => [p.split('=')[0].trim(), p.slice(p.indexOf('=') + 1).trim()]));
+    if (!names.length) continue;
+    const choices = kw.choices ? (literals(kw.choices).length ? literals(kw.choices) : [...kw.choices.matchAll(/-?\d+(\.\d+)?/g)].map((x) => x[0])) : [];
+    const dflt = kw.default && !/^(None|True|False)$/.test(kw.default) ? unq(kw.default) : '';
+    const help = kw.help ? unq(kw.help) : '';
+    if (names[0].startsWith('-')) {
+      const action = kw.action ? unq(kw.action) : '';
+      const flag = names.find((n) => n.startsWith('--')) || names[0];
+      if (action === 'help' || action === 'version' || flag === '--help') continue;
+      const takesValue = !/^(store_true|store_false|store_const|count)$/.test(action);
+      options.push({ flag, aliases: names, takesValue, label: kw.metavar ? unq(kw.metavar) : '', sample: takesValue ? sampleFor(`${flag.replace(/^-+/, '')} ${help}`, choices, dflt) : '', choices, default: dflt });
+    } else {
+      const nargs = kw.nargs ? unq(kw.nargs) : '';
+      positional.push({ index: positional.length + 1, name: names[0], label: names[0].replace(/_/g, ' '), required: !/^[?*]$/.test(nargs) && !dflt, choices, default: dflt, sample: sampleFor(names[0], choices, dflt), variadic: /^[*+]$/.test(nargs), help });
+    }
+  }
+  if (!calls.length) {
+    const named = new Map([...text.matchAll(/(\w+)\s*=\s*sys\.argv\[(\d)\]/g)].map((m) => [Number(m[2]), m[1]]));
+    const max = Math.max(0, ...[...text.matchAll(/sys\.argv\[(\d)\]/g)].map((m) => Number(m[1])));
+    for (let i = 1; i <= max; i++) positional.push({ index: i, name: named.get(i) || '', label: (named.get(i) || `argument ${i}`).replace(/_/g, ' '), required: true, choices: [], default: '', sample: sampleFor(named.get(i) || ''), variadic: false });
+    if (!max && /sys\.argv\[1:\]/.test(text)) positional.push({ index: 1, name: '', label: 'arguments', required: false, choices: [], default: '', sample: 'value', variadic: true });
+  }
+  const env = [];
+  for (const m of text.matchAll(/os\.(?:environ\.get|getenv)\(\s*['"](\w+)['"]\s*(?:,\s*['"]([^'"]*)['"])?|os\.environ\[\s*['"](\w+)['"]\s*\]/g)) {
+    const name = m[1] || m[3];
+    if (!env.some((e) => e.name === name) && !SHELL_VARS.has(name)) env.push({ name, default: m[2] || '' });
+  }
+  const prompts = [...text.matchAll(/\b(?:input|getpass(?:\.getpass)?)\(\s*(['"])(.*?)\1/g)].map((m) => m[2]);
+  const usage = /\busage\s*=\s*(['"])(.*?)\1/.exec(text)?.[2]?.replace(/%\(prog\)s\s*/, '') || '';
+  return { positional, options, env, examples: [], prompts: [...new Set(prompts)], usage, hasArgs: positional.length + options.length > 0, takesAny: false };
 }

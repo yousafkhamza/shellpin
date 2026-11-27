@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { buildRunCommand, withGuard, encodeShare, decodeShare, scriptName, compactScript } from '../tools/runcmd.mjs';
+import { buildRunCommand, addPrelude, encodeShare, decodeShare, scriptName, compactScript } from '../tools/runcmd.mjs';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,16 +23,27 @@ test('scriptName', () => {
   assert.equal(scriptName(''), 'script');
 });
 
-test('withGuard goes after the shebang, normalises CRLF and replaces an old guard', () => {
-  const g = withGuard(SCRIPT, 2_000_000_000);
+const P = (o = {}) => ({ fp: 'abcd1234', expires: 2_000_000_000, hosts: [], secrets: [], name: 'x', admin: false, ...o });
+
+test('shell prelude goes after the shebang, normalises CRLF and replaces an old one', () => {
+  const g = addPrelude('bash', SCRIPT, P());
   assert.ok(!g.includes('\r'));
   const lines = g.split('\n');
   assert.equal(lines[0], '#!/bin/bash');
-  assert.match(lines[1], /^# shellpin: expires 2033-05-18 03:33 UTC$/);
+  assert.equal(lines[1], '# >>> shellpin abcd1234 · expires 2033-05-18 03:33 UTC');
   assert.match(lines[2], /-lt 2000000000 \]/);
-  const again = withGuard(g, 2_100_000_000);
-  assert.equal(again.match(/# shellpin: expires/g).length, 1);
-  assert.match(withGuard('echo hi', 2_000_000_000), /^# shellpin: expires .*\n.*\necho hi\n$/);
+  assert.equal(lines[3], '# <<< shellpin');
+  const again = addPrelude('bash', g, P({ expires: 2_100_000_000 }));
+  assert.equal(again.match(/# >>> shellpin/g).length, 1);
+  assert.match(addPrelude('sh', 'echo hi', P()), /^# >>> shellpin .*\n.*\n# <<< shellpin\necho hi\n$/);
+});
+
+test('PowerShell prelude goes after param(), Python after the docstring and __future__', () => {
+  const ps = addPrelude('powershell', "[CmdletBinding()]\nparam(\n  [ValidateSet('a','b')] [string]$Mode = 'a' # (not a bracket)\n)\nWrite-Output $Mode\n", P({ admin: true }));
+  assert.match(ps, /^\[CmdletBinding\(\)\]\nparam\(\n[\s\S]*?\n\)\n# >>> shellpin[\s\S]*IsInRole[\s\S]*# <<< shellpin\nWrite-Output \$Mode\n$/);
+  assert.match(addPrelude('powershell', 'Write-Output 1\n', P()), /^# >>> shellpin/);
+  const py = addPrelude('python', '#!/usr/bin/env python3\n"""Doc\nstring."""\nfrom __future__ import annotations\nimport os\n', P({ secrets: ['DB_PASSWORD'], hosts: ['web-*'] }));
+  assert.match(py, /from __future__ import annotations\n# >>> shellpin[\s\S]*getpass[\s\S]*fnmatch[\s\S]*# <<< shellpin\nimport os\n$/);
 });
 
 test('size limit', async () => {
@@ -84,7 +95,7 @@ test('a damaged or cut-short paste runs nothing', { skip: !unix }, async () => {
 });
 
 test('share link round-trips the form', async () => {
-  const s = { text: SCRIPT, name: 'userctl', args: 'create "a b"', sudo: true, expires: now() + 99, fields: { positional: ['create', 'a b'], options: {}, env: {}, extra: '' }, compact: true };
+  const s = { text: SCRIPT, name: 'userctl', args: 'create "a b"', sudo: true, expires: now() + 99, fields: { positional: ['create', 'a b'], options: {}, env: {}, extra: '' }, compact: true, opts: { lang: 'sh', target: { kind: 'ssh', hosts: ['web1'] } } };
   const frag = await encodeShare(s);
   assert.match(frag, /^r1\.[A-Za-z0-9_-]+$/);
   assert.deepEqual(await decodeShare(`#${frag}`), s);

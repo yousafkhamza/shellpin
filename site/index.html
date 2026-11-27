@@ -34,13 +34,23 @@
       <form id="run-form" class="pub" novalidate>
         <h2 id="in-h" class="visually-hidden">Script</h2>
         <label class="field">
-          <span>Script <small class="muted">(paste it, or drop a .sh file on this box)</small></span>
+          <span>Script <small class="muted">(paste it, or drop a .sh, .ps1 or .py file on this box)</small></span>
           <textarea id="t" rows="16" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="#!/bin/bash&#10;set -euo pipefail&#10;&#10;echo &quot;Hello from $(hostname)&quot;"></textarea>
         </label>
         <div class="row">
-          <label class="btn file">Load .sh file<input id="file" type="file" accept=".sh,.bash,text/x-sh,text/plain"></label>
+          <label class="btn file">Load file<input id="file" type="file" accept=".sh,.bash,.ps1,.psm1,.py,text/x-sh,text/x-python,text/plain"></label>
+          <label class="inline-field">Language
+            <select id="lang">
+              <option value="auto">Auto</option>
+              <option value="bash">Bash</option>
+              <option value="sh">sh (POSIX, Alpine, BusyBox)</option>
+              <option value="powershell">PowerShell</option>
+              <option value="python">Python 3</option>
+            </select>
+          </label>
           <span id="size" class="muted"></span>
         </div>
+        <ul id="dangers" class="issues" aria-live="polite" hidden></ul>
 
         <!-- Built from the script: only the arguments it actually reads. -->
         <div id="argpanel" class="argpanel" hidden>
@@ -53,7 +63,8 @@
           <div id="opt-fields" class="argfields"></div>
           <details id="env-box" class="token" hidden>
             <summary>Settings <small class="muted">(environment variables the script reads)</small></summary>
-            <div id="env-fields" class="argfields"></div>
+            <p class="note">Tick “ask on server” for secrets: the command then asks for the value when it runs, with typing hidden, so it never appears in the command, chat or shell history.</p>
+            <div id="env-fields" class="envfields"></div>
           </details>
           <p id="arg-prompts" class="note" hidden></p>
           <label class="field extra">
@@ -71,7 +82,7 @@
 
         <div class="grid">
           <label class="field">
-            <span>Name <small class="muted">($0 in the script)</small></span>
+            <span>Name <small class="muted">($0 / argv[0] in the script)</small></span>
             <input id="name" type="text" autocomplete="off" spellcheck="false" placeholder="script" maxlength="40">
           </label>
           <label class="field">
@@ -86,9 +97,38 @@
             </select>
           </label>
         </div>
+
+        <div class="grid">
+          <label class="field" id="target-field">
+            <span>Run on</span>
+            <select id="target">
+              <option value="local">The machine I paste it into</option>
+              <option value="kubectl">A Kubernetes pod (kubectl exec)</option>
+              <option value="docker">A Docker container (docker exec)</option>
+              <option value="ssh">Servers over SSH</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Only run on hosts <small class="muted">(optional; comma-separated, * and ? allowed)</small></span>
+            <input id="hostlock" type="text" autocomplete="off" spellcheck="false" placeholder="prod-db-*, web-1">
+          </label>
+        </div>
+        <div id="target-kubectl" class="grid3" hidden>
+          <label class="field"><span>Pod <small class="muted">(or deploy/name)</small></span><input id="k-pod" type="text" autocomplete="off" spellcheck="false" placeholder="api-7d9f8c-x2x4q"></label>
+          <label class="field"><span>Namespace</span><input id="k-ns" type="text" autocomplete="off" spellcheck="false" placeholder="default"></label>
+          <label class="field"><span>Container <small class="muted">(optional)</small></span><input id="k-c" type="text" autocomplete="off" spellcheck="false" placeholder="app"></label>
+        </div>
+        <div id="target-docker" class="grid" hidden>
+          <label class="field"><span>Container name or ID</span><input id="d-c" type="text" autocomplete="off" spellcheck="false" placeholder="web_1"></label>
+        </div>
+        <div id="target-ssh" hidden>
+          <label class="field"><span>SSH hosts <small class="muted">(space or comma separated; user@host or ~/.ssh/config aliases)</small></span><input id="s-hosts" type="text" autocomplete="off" spellcheck="false" placeholder="ops@web1 web2 web3"></label>
+        </div>
+
         <div class="opts">
-          <label class="check"><input type="checkbox" id="sudo"> Run with sudo</label>
-          <label class="check"><input type="checkbox" id="compact" checked> Compact <small class="muted">(drop comments and blank lines for a shorter command)</small></label>
+          <label class="check"><input type="checkbox" id="sudo"> <span id="sudo-label">Run with sudo</span></label>
+          <label class="check" id="newproc-box" hidden><input type="checkbox" id="newproc" checked> New PowerShell process <small class="muted">(an exit in the script won't close your window)</small></label>
+          <label class="check"><input type="checkbox" id="compact" checked> Compact <small class="muted">(drop comments and blank lines)</small></label>
           <label class="check"><input type="checkbox" id="oneline"> Single line <small class="muted">(for tools that can't paste multiple lines)</small></label>
         </div>
         <ul id="issues" class="issues" aria-live="polite"></ul>
@@ -98,13 +138,26 @@
     <section id="out" aria-labelledby="out-h" hidden>
       <div class="section-head">
         <h2 id="out-h">Run this on the server</h2>
-        <span id="until" class="badge"></span>
+        <span class="row">
+          <span id="fp" class="badge mono" title="Fingerprint: first 8 characters of the script's SHA-256. The same script always has the same fingerprint."></span>
+          <span id="until" class="badge"></span>
+        </span>
       </div>
       <div class="cmd big">
         <pre><code id="cmd"></code></pre>
         <button type="button" id="copy" class="primary">Copy command</button>
       </div>
       <p id="cmd-note" class="note"></p>
+      <ul id="notes" class="issues" hidden></ul>
+
+      <details class="token preview-box">
+        <summary>Preview command <small class="muted">(shows the script on the server instead of running it)</small></summary>
+        <p class="note">Send this along with the run command so the person running it can read exactly what it does first. The fingerprint at the top matches the run command.</p>
+        <div class="cmd big">
+          <pre><code id="pcmd"></code></pre>
+          <button type="button" id="pcopy">Copy preview</button>
+        </div>
+      </details>
 
       <div class="section-head share-head">
         <h3>Share with your team</h3>
@@ -125,14 +178,14 @@
         </div>
         <div>
           <h3>Safe to paste</h3>
-          <p>The server decodes the whole script before running anything. If the paste is cut short or damaged, <code>gunzip</code>'s checksum fails and nothing runs. Prompts (<code>read</code>) still work.</p>
+          <p>The whole script is decoded before anything runs. A cut-short or damaged paste fails the gzip checksum and nothing runs. Prompts still work.</p>
         </div>
         <div>
-          <h3>Expiry</h3>
-          <p>A check at the top of the script refuses to run after the time you pick (one year at most). It's a guard against reusing old commands, not a lock: the script can be decoded from the command by hand.</p>
+          <h3>Guards inside the script</h3>
+          <p>The expiry date, the host lock and the secret prompts are written into the script itself, so they apply on SSH hosts and in containers too. They stop mistakes; they aren't a lock against someone who decodes the command by hand.</p>
         </div>
       </div>
-      <p class="note">Don't put passwords or keys in a script; anything in the command ends up in shell history. To hand over a key, use <a href="f.html">Share a file</a>. For scripts you run often, a <a href="scripts.html">saved script</a> gives a short <code>curl</code> command.</p>
+      <p class="note">Bash, sh and Python need <code>base64</code> and <code>gunzip</code> on the machine you paste into (for pods and containers, on your own machine). PowerShell needs Windows PowerShell 5.1 or PowerShell 7. To hand over a key, use <a href="f.html">Share a file</a>. For scripts you run often, a <a href="scripts.html">saved script</a> gives a short <code>curl</code> command.</p>
     </section>
   </main>
 

@@ -50,11 +50,11 @@ export async function build({ src, out, today, repo = '', branch = 'main' }) {
   await writeFile(join(out, 'scripts.json'), JSON.stringify(manifest, null, 2) + '\n');
 
   for (const f of await readdir(join(ROOT, 'site'))) await copyFile(join(ROOT, 'site', f), join(out, f));
-  await copyFile(join(ROOT, 'tools', 'rules.mjs'), join(out, 'rules.js'));
-  await copyFile(join(ROOT, 'tools', 'filelink.mjs'), join(out, 'filelink.js'));
-  const runcmd = await readFile(join(ROOT, 'tools', 'runcmd.mjs'), 'utf8');
-  await copyFile(join(ROOT, 'tools', 'argscan.mjs'), join(out, 'argscan.js'));
-  await writeFile(join(out, 'runcmd.js'), runcmd.replaceAll("'./filelink.mjs'", "'./filelink.js'").replaceAll("'./argscan.mjs'", "'./argscan.js'"));
+  // Shared modules go to the site as .js (GitHub Pages serves .js as JavaScript), with imports renamed.
+  for (const m of ['rules', 'filelink', 'argscan', 'runcmd', 'langs', 'danger']) {
+    const src = await readFile(join(ROOT, 'tools', `${m}.mjs`), 'utf8');
+    await writeFile(join(out, `${m}.js`), src.replace(/from '\.\/(\w+)\.mjs'/g, "from './$1.js'"));
+  }
   await writeFile(join(out, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
   return manifest;
 }
