@@ -14,6 +14,32 @@ SHELLPIN
 )" && sudo bash -c "$s" userctl create jatin
 ```
 
+## Who it's for
+
+**Good fit**
+- **Engineers who paste fixes into servers.** A script is on your laptop, a server is in front of you, and today it goes through a pastebin, a chat snippet or `scp`. Here it's one copy-paste: arguments filled in, nothing stored on a third-party site, nothing left on the server.
+- **Servers with no internet, or broken internet.** Air-gapped hosts, locked-down VPCs, machines reached through a bastion, or a server whose certificate store is broken (`curl: (60)`). `curl | bash` fails on all of these; this command needs no network, because the script is inside it.
+- **Pods and containers.** `kubectl exec` or `docker exec` into a container with no editor, no `curl` and a read-only filesystem. The script is decoded on your machine and passed in, so the container needs only the interpreter.
+- **Handing a script to someone else.** A vendor sending a fix to a customer's admin, a senior engineer helping a junior, an on-call handover. The person running it gets fields instead of guesswork, a preview of what it does, danger warnings, a fingerprint to compare, and an expiry so an old command isn't reused months later.
+
+**Not a good fit**
+- **Teams with proper remote-execution tooling.** If Ansible, AWS Systems Manager Run Command, Salt or a CI pipeline already reaches your servers, use it: you get audit logs, access control and repeatability. shellpin is for the gaps around those tools.
+- **Scripts you run every day.** Keep those in a repository or package them. For a short `curl` command to scripts you run often, use [saved scripts](#saved-scripts).
+- **Secrets.** The command and the script inside it end up in shell history. Use "ask on server" for values like passwords, and [Share a file](#handing-over-a-key-or-file) for keys.
+- **Strictly monitored machines.** See below.
+
+## Is this safe?
+
+The command decodes a script from base64 and runs it: `base64 -d | gunzip` into `bash -c`, or `FromBase64String` into a PowerShell script block. **Malware uses the same technique**, so endpoint security tools (Microsoft Defender, CrowdStrike and others) and PowerShell's malware scanning (AMSI) may flag or block the command even when the script is harmless. On a company machine, this can raise a security alert.
+
+What shellpin does about it:
+- **Nothing is hidden from the person running it.** The preview command prints the exact script, and the fingerprint at the start of both commands shows they match.
+- **Risky lines are flagged on the page before you copy:** recursive deletes, disk formats, firewall changes, nested downloads.
+- **The guards are written into the script:** expiry, host lock and secret prompts.
+- **The page stores and sends nothing.** Its Content-Security-Policy blocks every network request.
+
+What it can't do: stop automated detection, or make an unreviewed script safe. Read the preview before you run something you didn't write, and check with your security team before using this on monitored production machines.
+
 How it works:
 - **Asks only for the arguments the script takes.** The page reads the script and builds fields for:
   - positional arguments (`ACTION="$1"`, `${2:-8080}`), with names, defaults and choices taken from the usage text (`create|reset|delete <username> [yes|no]`) and from `case` statements;
